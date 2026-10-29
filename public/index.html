@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inkwell Blog</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f6f7fb;--card:#fff;--ink:#1b1f3b;--muted:#6b7090;--brand:#2540d9;--line:#e3e6f0;--danger:#c62828}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--ink);line-height:1.6}
+h1,h2,h3{font-family:Fraunces,Georgia,serif;line-height:1.2;margin:0 0 .5rem}
+header{background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.bar{max-width:760px;margin:auto;padding:.8rem 1rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem}
+.logo{font-family:Fraunces,serif;font-weight:800;font-size:1.4rem;color:var(--brand);text-decoration:none}
+nav{display:flex;gap:.5rem;align-items:center;font-size:.9rem}
+main{max-width:760px;margin:auto;padding:1rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:1.2rem;margin-bottom:1rem}
+.meta{color:var(--muted);font-size:.85rem}
+a{color:var(--brand)}
+button,.btn{background:var(--brand);color:#fff;border:0;border-radius:8px;padding:.55rem 1rem;font:600 .9rem Inter;cursor:pointer;text-decoration:none;display:inline-block}
+button.ghost{background:#eef1ff;color:var(--brand)}
+button.danger{background:#fdeaea;color:var(--danger)}
+button.small{padding:.25rem .6rem;font-size:.8rem}
+input,textarea{width:100%;padding:.65rem;border:1px solid var(--line);border-radius:8px;font:inherit;margin-bottom:.7rem;background:#fff}
+input:focus,textarea:focus,button:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
+textarea{min-height:140px;resize:vertical}
+.post-link{text-decoration:none;color:inherit;display:block}
+.post-link h2{color:var(--ink)}
+.excerpt{color:#3a3f63}
+.content{white-space:pre-wrap}
+.comment{border-top:1px solid var(--line);padding:.7rem 0}
+.row{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem}
+.toast{position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:.6rem 1rem;border-radius:8px;font-size:.9rem;z-index:9}
+.err{color:var(--danger);font-size:.9rem;margin:.2rem 0 .6rem}
+</style>
+</head>
+<body>
+<header><div class="bar">
+  <a class="logo" href="#/">Inkwell</a>
+  <nav id="nav"></nav>
+</div></header>
+<main id="app"></main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = (d) => new Date(d + 'Z').toLocaleDateString(undefined, {day:'numeric', month:'short', year:'numeric'});
+let user = JSON.parse(localStorage.getItem('user') || 'null');
+let token = localStorage.getItem('token');
+
+async function api(path, method = 'GET', body) {
+  const res = await fetch('/api' + path, {
+    method,
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Something went wrong');
+  return data;
+}
+function toast(msg) {
+  const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
+  document.body.appendChild(t); setTimeout(() => t.remove(), 2200);
+}
+function setAuth(d) {
+  token = d?.token || null; user = d?.user || null;
+  if (d) { localStorage.setItem('token', token); localStorage.setItem('user', JSON.stringify(user)); }
+  else { localStorage.removeItem('token'); localStorage.removeItem('user'); }
+  renderNav();
+}
+function renderNav() {
+  $('#nav').innerHTML = user
+    ? `<span class="meta">Hi, ${esc(user.username)}</span><a class="btn small" href="#/new">New post</a><button class="ghost small" id="logout">Logout</button>`
+    : `<a href="#/login">Login</a><a class="btn small" href="#/register">Sign up</a>`;
+  $('#logout')?.addEventListener('click', () => { setAuth(null); location.hash = '#/'; toast('Logged out'); });
+}
+
+// ---------- Views ----------
+async function home() {
+  const posts = await api('/posts');
+  $('#app').innerHTML = posts.length ? posts.map(p => `
+    <a class="post-link card" href="#/post/${p.id}">
+      <h2>${esc(p.title)}</h2>
+      <p class="excerpt">${esc(p.content.slice(0, 140))}${p.content.length > 140 ? '…' : ''}</p>
+      <div class="meta">${esc(p.author)} on ${fmt(p.created_at)}, ${p.comment_count} comment${p.comment_count == 1 ? '' : 's'}</div>
+    </a>`).join('') : `<div class="card"><h2>No posts yet</h2><p>Sign up and write the first one.</p></div>`;
+}
+
+async function postView(id) {
+  const p = await api('/posts/' + id);
+  const mine = user && user.id === p.user_id;
+  $('#app').innerHTML = `
+    <article class="card">
+      <h1>${esc(p.title)}</h1>
+      <div class="meta">${esc(p.author)} on ${fmt(p.created_at)}</div>
+      <p class="content">${esc(p.content)}</p>
+      ${mine ? `<div class="row"><a class="btn small ghost" href="#/edit/${p.id}">Edit</a><button class="danger small" id="del">Delete</button></div>` : ''}
+    </article>
+    <section class="card">
+      <h3>Comments (${p.comments.length})</h3>
+      ${p.comments.map(c => `<div class="comment"><strong>${esc(c.author)}</strong> <span class="meta">${fmt(c.created_at)}</span>
+        <div class="content">${esc(c.content)}</div>
+        ${user && user.id === c.user_id ? `<button class="danger small" data-cid="${c.id}">Delete</button>` : ''}</div>`).join('') || '<p class="meta">No comments yet.</p>'}
+      ${user ? `<textarea id="ctext" placeholder="Write a comment"></textarea><div class="err" id="cerr"></div><button id="cbtn">Post comment</button>`
+             : `<p><a href="#/login">Login</a> to comment.</p>`}
+    </section>`;
+  $('#del')?.addEventListener('click', async () => {
+    if (!confirm('Delete this post?')) return;
+    await api('/posts/' + id, 'DELETE'); toast('Post deleted'); location.hash = '#/';
+  });
+  $('#cbtn')?.addEventListener('click', async () => {
+    try { await api(`/posts/${id}/comments`, 'POST', { content: $('#ctext').value }); toast('Comment posted'); postView(id); }
+    catch (e) { $('#cerr').textContent = e.message; }
+  });
+  document.querySelectorAll('[data-cid]').forEach(b => b.addEventListener('click', async () => {
+    await api('/comments/' + b.dataset.cid, 'DELETE'); toast('Comment deleted'); postView(id);
+  }));
+}
+
+async function editor(id) {
+  if (!user) { location.hash = '#/login'; return; }
+  const p = id ? await api('/posts/' + id) : { title: '', content: '' };
+  $('#app').innerHTML = `<div class="card"><h2>${id ? 'Edit post' : 'New post'}</h2>
+    <input id="t" placeholder="Title" value="${esc(p.title)}">
+    <textarea id="c" placeholder="Write your post" style="min-height:240px">${esc(p.content)}</textarea>
+    <div class="err" id="err"></div><button id="save">${id ? 'Save changes' : 'Publish'}</button></div>`;
+  $('#save').addEventListener('click', async () => {
+    try {
+      const body = { title: $('#t').value, content: $('#c').value };
+      const r = id ? await api('/posts/' + id, 'PUT', body) : await api('/posts', 'POST', body);
+      toast(id ? 'Saved' : 'Published'); location.hash = '#/post/' + r.id;
+    } catch (e) { $('#err').textContent = e.message; }
+  });
+}
+
+function authForm(mode) {
+  const reg = mode === 'register';
+  $('#app').innerHTML = `<div class="card"><h2>${reg ? 'Create account' : 'Login'}</h2>
+    ${reg ? '<input id="u" placeholder="Username">' : ''}
+    <input id="e" type="email" placeholder="Email">
+    <input id="p" type="password" placeholder="Password (min 6 characters)">
+    <div class="err" id="err"></div>
+    <button id="go">${reg ? 'Sign up' : 'Login'}</button></div>`;
+  $('#go').addEventListener('click', async () => {
+    try {
+      const d = await api('/auth/' + mode, 'POST', { username: $('#u')?.value, email: $('#e').value, password: $('#p').value });
+      setAuth(d); toast('Welcome, ' + d.user.username); location.hash = '#/';
+    } catch (e) { $('#err').textContent = e.message; }
+  });
+}
+
+// ---------- Router ----------
+async function route() {
+  const [, page, id] = (location.hash || '#/').split('/');
+  try {
+    if (!page) await home();
+    else if (page === 'post') await postView(id);
+    else if (page === 'new') await editor();
+    else if (page === 'edit') await editor(id);
+    else if (page === 'login') authForm('login');
+    else if (page === 'register') authForm('register');
+    else await home();
+  } catch (e) { $('#app').innerHTML = `<div class="card"><h2>Oops</h2><p>${esc(e.message)}</p></div>`; }
+}
+window.addEventListener('hashchange', route);
+renderNav(); route();
+</script>
+</body>
+</html>
